@@ -1,0 +1,17 @@
+{
+  "moduleName": "department",
+  "displayName": "部门管理",
+  "permissions": [
+    "department:list",
+    "department:create",
+    "department:update",
+    "department:delete"
+  ],
+  "fields": [
+    { "name": "name", "type": "string", "label": "部门名称", "required": true },
+    { "name": "code", "type": "string", "label": "部门编码", "required": true },
+    { "name": "manager", "type": "string", "label": "负责人", "required": false },
+    { "name": "status", "type": "int", "label": "状态", "required": true }
+  ]
+}
+

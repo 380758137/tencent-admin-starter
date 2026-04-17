@@ -1,0 +1,17 @@
+{
+  "name": "tencent-admin-starter",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "dev:api": "cd apps/api && go run ./cmd/server",
+    "build:api": "cd apps/api && go build ./...",
+    "module:plan": "node tools/modulegen/generate-module.mjs",
+    "module:apply": "node tools/modulegen/generate-module.mjs --apply --confirm-overwrite"
+  }
+}
+
