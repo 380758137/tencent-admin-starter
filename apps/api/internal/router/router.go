@@ -6,6 +6,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/liusheng/tencent-admin-starter/apps/api/internal/config"
+	"github.com/liusheng/tencent-admin-starter/apps/api/internal/generated"
 	"github.com/liusheng/tencent-admin-starter/apps/api/internal/handlers"
 	"github.com/liusheng/tencent-admin-starter/apps/api/internal/middleware"
 	"github.com/liusheng/tencent-admin-starter/apps/api/internal/response"
@@ -50,6 +51,7 @@ func New(cfg config.Config, db *gorm.DB) *gin.Engine {
 		secured.Use(middleware.Auth(cfg, db))
 		{
 			secured.GET("/auth/me", authHandler.Me)
+			secured.GET("/auth/menus", authHandler.Menus)
 
 			secured.GET("/users", middleware.RequirePerms(db, "user:list"), userHandler.List)
 			secured.POST("/users", middleware.RequirePerms(db, "user:create"), userHandler.Create)
@@ -105,6 +107,8 @@ func New(cfg config.Config, db *gorm.DB) *gin.Engine {
 			secured.DELETE("/scheduled-jobs/:id", middleware.RequirePerms(db, "job:delete"), scheduledJobHandler.Delete)
 			secured.POST("/scheduled-jobs/:id/run", middleware.RequirePerms(db, "job:run"), scheduledJobHandler.RunOnce)
 			secured.GET("/scheduled-job-logs", middleware.RequirePerms(db, "job-log:list"), scheduledJobHandler.ListLogs)
+
+			generated.RegisterRoutes(secured, db)
 		}
 	}
 

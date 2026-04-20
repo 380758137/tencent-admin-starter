@@ -10,6 +10,7 @@ import {
   updateScheduledJob,
   type ScheduledJobPayload
 } from '../../api/scheduled-jobs'
+import { useCrudPerms, usePerm } from '../../composables/use-perms'
 import type { ScheduledJob, ScheduledJobLog } from '../../types'
 import { jobResultLabel, triggerTypeLabel } from '../../utils/display'
 
@@ -36,6 +37,9 @@ const form = reactive<ScheduledJobPayload>({
   status: 1,
   remark: ''
 })
+const { canCreate, canUpdate, canDelete } = useCrudPerms('job')
+const canRun = usePerm('job:run')
+const canViewJobLogs = usePerm('job-log:list')
 
 const jobColumns = [
   { colKey: 'id', title: 'ID', width: 70 },
@@ -77,6 +81,11 @@ async function loadJobs() {
 }
 
 async function loadLogs() {
+  if (!canViewJobLogs.value) {
+    logs.value = []
+    logTotal.value = 0
+    return
+  }
   logLoading.value = true
   try {
     const res = await fetchScheduledJobLogs({
@@ -146,19 +155,25 @@ async function runNow(row: ScheduledJob) {
 }
 
 function filterLogsByJob(row: ScheduledJob) {
+  if (!canViewJobLogs.value) return
   selectedJobId.value = row.id
   logPage.value = 1
   loadLogs()
 }
 
 function clearLogFilter() {
+  if (!canViewJobLogs.value) return
   selectedJobId.value = undefined
   logPage.value = 1
   loadLogs()
 }
 
 onMounted(async () => {
-  await Promise.all([loadJobs(), loadLogs()])
+  if (canViewJobLogs.value) {
+    await Promise.all([loadJobs(), loadLogs()])
+    return
+  }
+  await loadJobs()
 })
 </script>
 
@@ -172,7 +187,7 @@ onMounted(async () => {
       <t-input v-model="keyword" placeholder="搜索任务名/命令" style="width: 280px" />
       <t-button @click="loadJobs">查询</t-button>
       <div class="grow" />
-      <t-button theme="primary" @click="openCreate">新建任务</t-button>
+      <t-button v-if="canCreate" theme="primary" @click="openCreate">新建任务</t-button>
     </div>
 
     <div class="data-table-wrap">
@@ -188,12 +203,13 @@ onMounted(async () => {
           </t-tag>
         </template>
         <template #actions="{ row }">
-          <t-space>
-            <t-link theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
-            <t-link theme="success" hover="color" @click="runNow(row)">执行</t-link>
-            <t-link theme="warning" hover="color" @click="filterLogsByJob(row)">日志</t-link>
-            <t-link theme="danger" hover="color" @click="remove(row)">删除</t-link>
+          <t-space v-if="canUpdate || canRun || canDelete || canViewJobLogs">
+            <t-link v-if="canUpdate" theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
+            <t-link v-if="canRun" theme="success" hover="color" @click="runNow(row)">执行</t-link>
+            <t-link v-if="canViewJobLogs" theme="warning" hover="color" @click="filterLogsByJob(row)">日志</t-link>
+            <t-link v-if="canDelete" theme="danger" hover="color" @click="remove(row)">删除</t-link>
           </t-space>
+          <span v-else>-</span>
         </template>
       </t-table>
     </div>
@@ -202,26 +218,28 @@ onMounted(async () => {
       <t-pagination v-model:current="page" v-model:page-size="size" :total="total" @change="loadJobs" />
     </div>
 
-    <div style="height: 18px" />
-    <div class="toolbar">
-      <div style="font-size: 15px; font-weight: 600">执行日志</div>
-      <t-tag v-if="selectedJobId" theme="primary" variant="outline">当前筛选任务ID: {{ selectedJobId }}</t-tag>
-      <div class="grow" />
-      <t-button variant="outline" @click="clearLogFilter">清空筛选</t-button>
-    </div>
-    <div class="data-table-wrap">
-      <t-table row-key="id" :data="logs" :columns="logColumns" :loading="logLoading" bordered>
-        <template #triggerType="{ row }">
-          {{ triggerTypeLabel(row.triggerType) }}
-        </template>
-        <template #status="{ row }">
-          <t-tag :theme="row.status === 'success' ? 'success' : 'danger'" variant="outline">{{ jobResultLabel(row.status) }}</t-tag>
-        </template>
-      </t-table>
-    </div>
-    <div style="margin-top: 12px; display: flex; justify-content: flex-end">
-      <t-pagination v-model:current="logPage" v-model:page-size="logSize" :total="logTotal" @change="loadLogs" />
-    </div>
+    <template v-if="canViewJobLogs">
+      <div style="height: 18px" />
+      <div class="toolbar">
+        <div style="font-size: 15px; font-weight: 600">执行日志</div>
+        <t-tag v-if="selectedJobId" theme="primary" variant="outline">当前筛选任务ID: {{ selectedJobId }}</t-tag>
+        <div class="grow" />
+        <t-button variant="outline" @click="clearLogFilter">清空筛选</t-button>
+      </div>
+      <div class="data-table-wrap">
+        <t-table row-key="id" :data="logs" :columns="logColumns" :loading="logLoading" bordered>
+          <template #triggerType="{ row }">
+            {{ triggerTypeLabel(row.triggerType) }}
+          </template>
+          <template #status="{ row }">
+            <t-tag :theme="row.status === 'success' ? 'success' : 'danger'" variant="outline">{{ jobResultLabel(row.status) }}</t-tag>
+          </template>
+        </t-table>
+      </div>
+      <div style="margin-top: 12px; display: flex; justify-content: flex-end">
+        <t-pagination v-model:current="logPage" v-model:page-size="logSize" :total="logTotal" @change="loadLogs" />
+      </div>
+    </template>
 
     <t-dialog v-model:visible="visible" :header="editingId ? '编辑任务' : '新建任务'" width="680px" @confirm="submit">
       <t-form layout="vertical">

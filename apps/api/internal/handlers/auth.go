@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -135,33 +136,108 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	}))
 }
 
-func (h *AuthHandler) loadRoleAccess(roleKey string) ([]string, string, error) {
-	var role models.Role
-	if err := h.db.Select("permissions", "data_scope").Where("role_key = ?", roleKey).First(&role).Error; err != nil {
+func (h *AuthHandler) Menus(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, response.Error("unauthorized"))
+		return
+	}
+
+	var user models.User
+	if err := h.db.First(&user, claims.UserID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, response.Error("用户不存在"))
+		return
+	}
+
+	perms, _, permErr := h.loadRoleAccess(user.Role)
+	if permErr != nil {
+		c.JSON(http.StatusInternalServerError, response.Error("权限读取失败"))
+		return
+	}
+
+	allowAll := false
+	permSet := make(map[string]struct{}, len(perms))
+	for _, perm := range perms {
+		trimmed := strings.TrimSpace(perm)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "*" {
+			allowAll = true
+			break
+		}
+		permSet[trimmed] = struct{}{}
+	}
+
+	var menus []models.Menu
+	if err := h.db.
+		Where("status = ? AND menu_type = ?", 1, "menu").
+		Order("parent_id ASC").
+		Order("sort ASC").
+		Order("id ASC").
+		Find(&menus).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, response.Error("菜单读取失败"))
+		return
+	}
+
+	if allowAll {
+		c.JSON(http.StatusOK, response.Success(menus))
+		return
+	}
+
+	filtered := make([]models.Menu, 0, len(menus))
+	for _, menu := range menus {
+		rawPerm := strings.TrimSpace(menu.Perms)
+		if rawPerm == "" {
+			filtered = append(filtered, menu)
+			continue
+		}
+		if _, exists := permSet[rawPerm]; exists {
+			filtered = append(filtered, menu)
+		}
+	}
+
+	c.JSON(http.StatusOK, response.Success(filtered))
+}
+
+func (h *AuthHandler) loadRoleAccess(roleRaw string) ([]string, string, error) {
+	roleKeys := utils.SplitRoleKeys(roleRaw)
+	if len(roleKeys) == 0 {
+		return []string{}, "self", nil
+	}
+
+	var roles []models.Role
+	if err := h.db.Select("permissions", "data_scope", "status").Where("role_key IN ?", roleKeys).Find(&roles).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return []string{}, "self", nil
 		}
 		return nil, "", err
 	}
-	raw := strings.TrimSpace(role.Permissions)
-	if raw == "" {
-		scope := role.DataScope
-		if scope == "" {
-			scope = "self"
+
+	scope := "self"
+	allow := map[string]struct{}{}
+	for _, role := range roles {
+		if role.Status != 1 {
+			continue
 		}
-		return []string{}, scope, nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			out = append(out, trimmed)
+		scope = utils.MergeDataScope(scope, role.DataScope)
+		for _, part := range strings.Split(role.Permissions, ",") {
+			perm := strings.TrimSpace(part)
+			if perm == "" {
+				continue
+			}
+			allow[perm] = struct{}{}
 		}
 	}
-	scope := role.DataScope
-	if scope == "" {
-		scope = "self"
+
+	if _, exists := allow["*"]; exists {
+		return []string{"*"}, scope, nil
 	}
+
+	out := make([]string, 0, len(allow))
+	for perm := range allow {
+		out = append(out, perm)
+	}
+	sort.Strings(out)
 	return out, scope, nil
 }

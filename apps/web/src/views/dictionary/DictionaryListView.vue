@@ -8,6 +8,7 @@ import {
   updateDictionaryItem,
   type DictionaryPayload
 } from '../../api/dictionary'
+import { useCrudPerms } from '../../composables/use-perms'
 import type { DictionaryItem } from '../../types'
 
 const loading = ref(false)
@@ -39,6 +40,7 @@ const columns = [
   { colKey: 'remark', title: '备注' },
   { colKey: 'actions', title: '操作', width: 160 }
 ]
+const { canCreate, canUpdate, canDelete } = useCrudPerms('dictionary')
 
 function resetForm() {
   form.dictType = ''
@@ -122,7 +124,7 @@ onMounted(loadItems)
       <t-input v-model="keyword" placeholder="搜索标签/键值" style="width: 220px" />
       <t-button @click="loadItems">查询</t-button>
       <div class="grow" />
-      <t-button theme="primary" @click="openCreate">新增字典项</t-button>
+      <t-button v-if="canCreate" theme="primary" @click="openCreate">新增字典项</t-button>
     </div>
 
     <div class="data-table-wrap">
@@ -133,10 +135,11 @@ onMounted(loadItems)
           </t-tag>
         </template>
         <template #actions="{ row }">
-          <t-space>
-            <t-link theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
-            <t-link theme="danger" hover="color" @click="remove(row)">删除</t-link>
+          <t-space v-if="canUpdate || canDelete">
+            <t-link v-if="canUpdate" theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
+            <t-link v-if="canDelete" theme="danger" hover="color" @click="remove(row)">删除</t-link>
           </t-space>
+          <span v-else>-</span>
         </template>
       </t-table>
     </div>

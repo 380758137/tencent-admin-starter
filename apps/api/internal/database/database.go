@@ -150,6 +150,43 @@ func seedFoundationData(db *gorm.DB) error {
 		}
 	}
 
+	if err := seedDefaultMenus(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func seedDefaultMenus(db *gorm.DB) error {
+	var count int64
+	if err := db.Model(&models.Menu{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	menus := []models.Menu{
+		{Name: "工作台", MenuType: "menu", Path: "/", Sort: 10, Status: 1},
+		{Name: "用户管理", MenuType: "menu", Path: "/users", Perms: "user:list", Sort: 20, Status: 1},
+		{Name: "部门管理", MenuType: "menu", Path: "/departments", Perms: "department:list", Sort: 30, Status: 1},
+		{Name: "角色管理", MenuType: "menu", Path: "/roles", Perms: "role:list", Sort: 40, Status: 1},
+		{Name: "菜单管理", MenuType: "menu", Path: "/menus", Perms: "menu:list", Sort: 50, Status: 1},
+		{Name: "字典管理", MenuType: "menu", Path: "/dictionary", Perms: "dictionary:list", Sort: 60, Status: 1},
+		{Name: "参数中心", MenuType: "menu", Path: "/system-params", Perms: "param:list", Sort: 70, Status: 1},
+		{Name: "日志中心", MenuType: "menu", Path: "/logs", Perms: "log:operation:list", Sort: 80, Status: 1},
+		{Name: "系统监控", MenuType: "menu", Path: "/monitor", Perms: "monitor:view", Sort: 90, Status: 1},
+		{Name: "岗位管理", MenuType: "menu", Path: "/positions", Perms: "position:list", Sort: 100, Status: 1},
+		{Name: "通知公告", MenuType: "menu", Path: "/notices", Perms: "notice:list", Sort: 110, Status: 1},
+		{Name: "在线用户", MenuType: "menu", Path: "/online-users", Perms: "online-user:list", Sort: 120, Status: 1},
+		{Name: "定时任务", MenuType: "menu", Path: "/scheduled-jobs", Perms: "job:list", Sort: 130, Status: 1},
+	}
+	for _, menu := range menus {
+		entity := menu
+		if err := db.Create(&entity).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

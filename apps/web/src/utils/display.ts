@@ -1,8 +1,15 @@
 export function roleLabel(roleKey?: string): string {
   if (!roleKey) return '-'
-  if (roleKey === 'admin') return '超级管理员'
-  if (roleKey === 'operator') return '操作员'
-  return roleKey
+  const labels = roleKey
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      if (item === 'admin') return '超级管理员'
+      if (item === 'operator') return '操作员'
+      return item
+    })
+  return labels.length > 0 ? labels.join(' / ') : '-'
 }
 
 export function dataScopeLabel(scope?: string): string {

@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { createDepartment, deleteDepartment, fetchDepartments, updateDepartment, type DepartmentPayload } from '../../api/departments'
+import { useCrudPerms } from '../../composables/use-perms'
 import type { Department } from '../../types'
 
 const loading = ref(false)
@@ -33,6 +34,7 @@ const columns = [
 ]
 
 const parentOptions = computed(() => departmentOptions.value.filter((item) => item.id !== editingId.value))
+const { canCreate, canUpdate, canDelete } = useCrudPerms('department')
 
 function resetForm() {
   form.name = ''
@@ -132,7 +134,7 @@ onMounted(async () => {
       <t-input v-model="keyword" placeholder="搜索部门名称/编码" style="width: 260px" />
       <t-button @click="loadDepartments">查询</t-button>
       <div class="grow" />
-      <t-button theme="primary" @click="openCreate">新建部门</t-button>
+      <t-button v-if="canCreate" theme="primary" @click="openCreate">新建部门</t-button>
     </div>
 
     <div class="data-table-wrap">
@@ -144,10 +146,11 @@ onMounted(async () => {
         <t-tag class="table-status" :theme="row.status === 1 ? 'success' : 'warning'">{{ row.status === 1 ? '启用' : '禁用' }}</t-tag>
       </template>
       <template #actions="{ row }">
-        <t-space>
-          <t-link theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
-          <t-link theme="danger" hover="color" @click="remove(row)">删除</t-link>
+        <t-space v-if="canUpdate || canDelete">
+          <t-link v-if="canUpdate" theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
+          <t-link v-if="canDelete" theme="danger" hover="color" @click="remove(row)">删除</t-link>
         </t-space>
+        <span v-else>-</span>
       </template>
     </t-table>
     </div>

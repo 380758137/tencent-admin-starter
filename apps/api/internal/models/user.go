@@ -7,7 +7,7 @@ type User struct {
 	Username     string    `json:"username" gorm:"size:64;uniqueIndex;not null"`
 	PasswordHash string    `json:"-" gorm:"size:255;not null"`
 	DisplayName  string    `json:"displayName" gorm:"size:64;not null"`
-	Role         string    `json:"role" gorm:"size:32;not null;default:admin"`
+	Role         string    `json:"role" gorm:"size:255;not null;default:operator"`
 	DeptID       uint      `json:"deptId" gorm:"not null;default:0;index"`
 	Status       int       `json:"status" gorm:"not null"`
 	CreatedAt    time.Time `json:"createdAt"`

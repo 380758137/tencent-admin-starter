@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { createRole, deleteRole, fetchRoles, updateRole, type RolePayload } from '../../api/roles'
+import { useCrudPerms } from '../../composables/use-perms'
 import type { Role } from '../../types'
 import { dataScopeLabel } from '../../utils/display'
 
@@ -23,7 +24,11 @@ const form = reactive<RolePayload>({
   remark: ''
 })
 const selectedPermissions = ref<string[]>([])
-const customPermission = ref('')
+const permissionVisible = ref(false)
+const permissionKeyword = ref('')
+const draftPermissions = ref<string[]>([])
+const draftCustomPermission = ref('')
+const { canCreate, canUpdate, canDelete } = useCrudPerms('role')
 
 const presetPermissionOptions = [
   { value: 'user:list', label: '用户查看' },
@@ -83,6 +88,44 @@ const columns = [
   { colKey: 'actions', title: '操作', width: 160 }
 ]
 
+const moduleLabelMap: Record<string, string> = {
+  user: '用户',
+  department: '部门',
+  role: '角色',
+  menu: '菜单',
+  dictionary: '字典',
+  param: '参数',
+  log: '日志',
+  monitor: '监控',
+  position: '岗位',
+  notice: '公告',
+  'online-user': '在线用户',
+  job: '任务',
+  'job-log': '任务日志'
+}
+
+const filteredPermissionOptions = computed(() => {
+  const kw = permissionKeyword.value.trim().toLowerCase()
+  if (!kw) return presetPermissionOptions
+  return presetPermissionOptions.filter((item) => item.label.toLowerCase().includes(kw) || item.value.toLowerCase().includes(kw))
+})
+
+const groupedPermissionOptions = computed(() => {
+  const grouped = new Map<string, { key: string; label: string; items: typeof presetPermissionOptions }>()
+  for (const item of filteredPermissionOptions.value) {
+    const moduleKey = item.value.split(':')[0]
+    if (!grouped.has(moduleKey)) {
+      grouped.set(moduleKey, {
+        key: moduleKey,
+        label: moduleLabelMap[moduleKey] || moduleKey,
+        items: []
+      })
+    }
+    grouped.get(moduleKey)!.items.push(item)
+  }
+  return Array.from(grouped.values())
+})
+
 function resetForm() {
   form.name = ''
   form.roleKey = ''
@@ -91,7 +134,9 @@ function resetForm() {
   form.status = 1
   form.remark = ''
   selectedPermissions.value = []
-  customPermission.value = ''
+  draftPermissions.value = []
+  draftCustomPermission.value = ''
+  permissionKeyword.value = ''
 }
 
 function splitPermissions(raw: string): string[] {
@@ -139,21 +184,35 @@ function openEdit(row: Role) {
   form.dataScope = row.dataScope
   form.status = row.status
   form.remark = row.remark
-  customPermission.value = ''
+  draftPermissions.value = [...selectedPermissions.value]
+  draftCustomPermission.value = ''
+  permissionKeyword.value = ''
   visible.value = true
 }
 
-function addCustomPermission() {
-  const value = customPermission.value.trim()
+function addDraftCustomPermission() {
+  const value = draftCustomPermission.value.trim()
   if (!value) return
-  if (!selectedPermissions.value.includes(value)) {
-    selectedPermissions.value = [...selectedPermissions.value, value]
+  if (!draftPermissions.value.includes(value)) {
+    draftPermissions.value = [...draftPermissions.value, value]
   }
-  customPermission.value = ''
+  draftCustomPermission.value = ''
 }
 
 function removePermission(code: string) {
   selectedPermissions.value = selectedPermissions.value.filter((item) => item !== code)
+}
+
+function openPermissionDialog() {
+  draftPermissions.value = [...selectedPermissions.value]
+  draftCustomPermission.value = ''
+  permissionKeyword.value = ''
+  permissionVisible.value = true
+}
+
+function confirmPermissionDialog() {
+  selectedPermissions.value = Array.from(new Set(draftPermissions.value))
+  permissionVisible.value = false
 }
 
 async function submit() {
@@ -203,7 +262,7 @@ onMounted(loadRoles)
       <t-input v-model="keyword" placeholder="搜索角色名称/标识" style="width: 260px" />
       <t-button @click="loadRoles">查询</t-button>
       <div class="grow" />
-      <t-button theme="primary" @click="openCreate">新建角色</t-button>
+      <t-button v-if="canCreate" theme="primary" @click="openCreate">新建角色</t-button>
     </div>
 
     <div class="data-table-wrap">
@@ -226,10 +285,11 @@ onMounted(loadRoles)
           </t-tag>
         </template>
         <template #actions="{ row }">
-          <t-space>
-            <t-link theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
-            <t-link theme="danger" hover="color" @click="remove(row)">删除</t-link>
+          <t-space v-if="canUpdate || canDelete">
+            <t-link v-if="canUpdate" theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
+            <t-link v-if="canDelete" theme="danger" hover="color" @click="remove(row)">删除</t-link>
           </t-space>
+          <span v-else>-</span>
         </template>
       </t-table>
     </div>
@@ -247,18 +307,10 @@ onMounted(loadRoles)
           <t-input v-model="form.roleKey" />
         </t-form-item>
         <t-form-item label="权限配置">
-          <t-select
-            v-model="selectedPermissions"
-            :options="presetPermissionOptions"
-            multiple
-            filterable
-            clearable
-            placeholder="请选择权限码（支持搜索与多选）"
-          />
-          <div style="display: flex; gap: 8px; margin-top: 10px">
-            <t-input v-model="customPermission" placeholder="追加自定义权限码，如 user:reset-password" />
-            <t-button variant="outline" @click="addCustomPermission">添加</t-button>
-          </div>
+          <t-space>
+            <t-button variant="outline" @click="openPermissionDialog">配置权限</t-button>
+            <t-tag theme="primary" variant="outline">已选 {{ selectedPermissions.length }} 项</t-tag>
+          </t-space>
           <t-space break-line size="4px" style="margin-top: 10px">
             <t-tag v-for="item in selectedPermissions" :key="item" closable @close="removePermission(item)">
               {{ item }}
@@ -283,6 +335,37 @@ onMounted(loadRoles)
           <t-input v-model="form.remark" />
         </t-form-item>
       </t-form>
+    </t-dialog>
+
+    <t-dialog v-model:visible="permissionVisible" header="权限配置" width="860px" @confirm="confirmPermissionDialog">
+      <div class="toolbar" style="margin-bottom: 12px">
+        <t-input v-model="permissionKeyword" clearable placeholder="搜索权限码/名称" style="width: 320px" />
+        <div class="grow" />
+        <t-tag theme="primary" variant="outline">当前勾选：{{ draftPermissions.length }}</t-tag>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 12px">
+        <t-input v-model="draftCustomPermission" placeholder="追加自定义权限码，如 user:reset-password" />
+        <t-button
+          variant="outline"
+          @click="addDraftCustomPermission"
+        >
+          添加
+        </t-button>
+      </div>
+
+      <div v-for="group in groupedPermissionOptions" :key="group.key" style="margin-bottom: 14px">
+        <div style="font-size: 13px; font-weight: 600; color: var(--td-text-color-secondary); margin-bottom: 8px">
+          {{ group.label }}
+        </div>
+        <t-checkbox-group v-model="draftPermissions">
+          <t-space break-line size="6px">
+            <t-checkbox v-for="item in group.items" :key="item.value" :value="item.value">
+              {{ item.label }}（{{ item.value }}）
+            </t-checkbox>
+          </t-space>
+        </t-checkbox-group>
+      </div>
     </t-dialog>
   </div>
 </template>

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/liusheng/tencent-admin-starter/apps/api/internal/models"
 	"github.com/liusheng/tencent-admin-starter/apps/api/internal/response"
+	"github.com/liusheng/tencent-admin-starter/apps/api/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -17,24 +18,31 @@ func RequirePerms(db *gorm.DB, perms ...string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, response.Error("unauthorized"))
 			return
 		}
-		if claims.Role == "admin" {
+		if utils.HasRole(claims.Role, "admin") {
 			c.Next()
 			return
 		}
 
-		var role models.Role
-		if err := db.Select("permissions", "status").Where("role_key = ?", claims.Role).First(&role).Error; err != nil {
+		roleKeys := utils.SplitRoleKeys(claims.Role)
+		if len(roleKeys) == 0 {
 			c.AbortWithStatusJSON(http.StatusForbidden, response.Error("forbidden"))
 			return
 		}
-		if role.Status != 1 {
+
+		var roles []models.Role
+		if err := db.Select("permissions", "status").Where("role_key IN ?", roleKeys).Find(&roles).Error; err != nil {
 			c.AbortWithStatusJSON(http.StatusForbidden, response.Error("forbidden"))
 			return
 		}
 
 		allow := map[string]struct{}{}
-		for _, p := range splitPerms(role.Permissions) {
-			allow[p] = struct{}{}
+		for _, role := range roles {
+			if role.Status != 1 {
+				continue
+			}
+			for _, p := range splitPerms(role.Permissions) {
+				allow[p] = struct{}{}
+			}
 		}
 		if _, exists := allow["*"]; exists {
 			c.Next()

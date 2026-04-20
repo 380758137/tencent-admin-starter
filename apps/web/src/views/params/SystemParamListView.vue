@@ -8,6 +8,7 @@ import {
   updateSystemParam,
   type SystemParamPayload
 } from '../../api/system-params'
+import { useCrudPerms } from '../../composables/use-perms'
 import type { SystemParam } from '../../types'
 
 const loading = ref(false)
@@ -36,6 +37,7 @@ const columns = [
   { colKey: 'remark', title: '备注' },
   { colKey: 'actions', title: '操作', width: 160 }
 ]
+const { canCreate, canUpdate, canDelete } = useCrudPerms('param')
 
 function resetForm() {
   form.paramKey = ''
@@ -116,7 +118,7 @@ onMounted(loadParams)
       <t-input v-model="keyword" placeholder="搜索参数键/名称" style="width: 260px" />
       <t-button @click="loadParams">查询</t-button>
       <div class="grow" />
-      <t-button theme="primary" @click="openCreate">新增参数</t-button>
+      <t-button v-if="canCreate" theme="primary" @click="openCreate">新增参数</t-button>
     </div>
 
     <div class="data-table-wrap">
@@ -127,10 +129,11 @@ onMounted(loadParams)
           </t-tag>
         </template>
         <template #actions="{ row }">
-          <t-space>
-            <t-link theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
-            <t-link theme="danger" hover="color" @click="remove(row)">删除</t-link>
+          <t-space v-if="canUpdate || canDelete">
+            <t-link v-if="canUpdate" theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
+            <t-link v-if="canDelete" theme="danger" hover="color" @click="remove(row)">删除</t-link>
           </t-space>
+          <span v-else>-</span>
         </template>
       </t-table>
     </div>

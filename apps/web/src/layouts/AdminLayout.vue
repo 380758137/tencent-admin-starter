@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { useAuthStore } from '../stores/auth'
+import { generatedModuleMenus } from '../generated/module-menus.generated'
 import { roleLabel } from '../utils/display'
 
 const route = useRoute()
@@ -12,6 +14,65 @@ const collapsed = ref(false)
 const currentPath = computed(() => route.path)
 const asideWidth = computed(() => (collapsed.value ? 64 : 232))
 const asideWidthPx = computed(() => `${asideWidth.value}px`)
+
+const menuIconMap: Record<string, string> = {
+  '/': 'dashboard',
+  '/users': 'user',
+  '/departments': 'root-list',
+  '/roles': 'secured',
+  '/menus': 'view-list',
+  '/dictionary': 'book',
+  '/system-params': 'setting-1',
+  '/logs': 'chart',
+  '/monitor': 'desktop',
+  '/positions': 'usergroup',
+  '/notices': 'notification',
+  '/online-users': 'browse',
+  '/scheduled-jobs': 'time'
+}
+
+type SidebarMenu = {
+  path: string
+  label: string
+  icon: string
+  parentId: number
+  sort: number
+}
+
+const visibleMenus = computed<SidebarMenu[]>(() => {
+  const merged: SidebarMenu[] = auth.menus
+    .filter((item) => item.status === 1 && item.menuType === 'menu' && !!item.path)
+    .map((item) => {
+      const normalizedPath = item.path.startsWith('/') ? item.path : `/${item.path}`
+      return {
+        path: normalizedPath,
+        label: item.name,
+        icon: menuIconMap[normalizedPath] || 'layers',
+        parentId: item.parentId ?? 0,
+        sort: item.sort ?? 0
+      }
+    })
+
+  const seen = new Set(merged.map((item) => item.path))
+  for (const item of generatedModuleMenus) {
+    if (!auth.isAdmin && !auth.hasPerm(item.perm)) continue
+    if (seen.has(item.path)) continue
+    merged.push({
+      path: item.path,
+      label: item.label,
+      icon: 'layers',
+      parentId: 0,
+      sort: 900
+    })
+    seen.add(item.path)
+  }
+
+  merged.sort((a, b) => (a.parentId - b.parentId) || (a.sort - b.sort) || a.path.localeCompare(b.path))
+  if (merged.length === 0) {
+    merged.push({ path: '/', label: '工作台', icon: 'dashboard', parentId: 0, sort: 0 })
+  }
+  return merged
+})
 
 function navigate(path: string) {
   router.push(path)
@@ -25,6 +86,16 @@ function doLogout() {
   auth.logout()
   router.push('/login')
 }
+
+onMounted(async () => {
+  if (!auth.isLoggedIn) return
+  if (auth.menus.length > 0) return
+  try {
+    await auth.loadMenus()
+  } catch {
+    MessagePlugin.error('菜单加载失败')
+  }
+})
 </script>
 
 <template>
@@ -57,61 +128,9 @@ function doLogout() {
         </transition>
       </div>
       <t-menu :value="currentPath" :collapsed="collapsed" class="side-menu" style="width: 100%" theme="dark" @change="(value: string | number) => navigate(String(value))">
-        <t-menu-item value="/">
-          <template #icon><t-icon name="dashboard" /></template>
-          工作台
-        </t-menu-item>
-        <t-menu-item value="/users">
-          <template #icon><t-icon name="user" /></template>
-          用户管理
-        </t-menu-item>
-        <t-menu-item value="/departments">
-          <template #icon><t-icon name="root-list" /></template>
-          部门管理
-        </t-menu-item>
-        <t-menu-item value="/roles">
-          <template #icon><t-icon name="secured" /></template>
-          角色管理
-        </t-menu-item>
-        <t-menu-item value="/menus">
-          <template #icon><t-icon name="view-list" /></template>
-          菜单管理
-        </t-menu-item>
-        <t-menu-item value="/dictionary">
-          <template #icon><t-icon name="book" /></template>
-          字典管理
-        </t-menu-item>
-        <t-menu-item value="/system-params">
-          <template #icon><t-icon name="setting-1" /></template>
-          参数中心
-        </t-menu-item>
-        <t-menu-item value="/logs">
-          <template #icon><t-icon name="chart" /></template>
-          日志中心
-        </t-menu-item>
-        <t-menu-item value="/monitor">
-          <template #icon><t-icon name="desktop" /></template>
-          系统监控
-        </t-menu-item>
-        <t-menu-item value="/positions">
-          <template #icon><t-icon name="usergroup" /></template>
-          岗位管理
-        </t-menu-item>
-        <t-menu-item value="/notices">
-          <template #icon><t-icon name="notification" /></template>
-          通知公告
-        </t-menu-item>
-        <t-menu-item value="/online-users">
-          <template #icon><t-icon name="browse" /></template>
-          在线用户
-        </t-menu-item>
-        <t-menu-item value="/scheduled-jobs">
-          <template #icon><t-icon name="time" /></template>
-          定时任务
-        </t-menu-item>
-        <t-menu-item value="/generated/department">
-          <template #icon><t-icon name="layers" /></template>
-          部门管理（生成示例）
+        <t-menu-item v-for="item in visibleMenus" :key="item.path" :value="item.path">
+          <template #icon><t-icon :name="item.icon" /></template>
+          {{ item.label }}
         </t-menu-item>
       </t-menu>
     </t-aside>

@@ -77,6 +77,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 	}
 
 	role := req.Role
+	role = normalizeUserRoles(role)
 	if role == "" {
 		role = "operator"
 	}
@@ -124,7 +125,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		updates["display_name"] = req.DisplayName
 	}
 	if req.Role != "" {
-		updates["role"] = req.Role
+		updates["role"] = normalizeUserRoles(req.Role)
 	}
 	if req.DeptID != nil {
 		updates["dept_id"] = *req.DeptID
@@ -262,6 +263,7 @@ func (h *UserHandler) ImportCSV(c *gin.Context) {
 		if len(row) > 2 && strings.TrimSpace(row[2]) != "" {
 			role = strings.TrimSpace(row[2])
 		}
+		role = normalizeUserRoles(role)
 		status := 1
 		if len(row) > 3 && strings.TrimSpace(row[3]) != "" {
 			if parsed, parseErr := strconv.Atoi(strings.TrimSpace(row[3])); parseErr == nil {
@@ -312,7 +314,7 @@ func (h *UserHandler) scopedUserQuery(c *gin.Context) (*gorm.DB, error) {
 	if !ok {
 		return nil, fmt.Errorf("unauthorized")
 	}
-	if claims.Role == "admin" {
+	if utils.HasRole(claims.Role, "admin") {
 		return query, nil
 	}
 
@@ -322,13 +324,19 @@ func (h *UserHandler) scopedUserQuery(c *gin.Context) (*gorm.DB, error) {
 	}
 
 	dataScope := "self"
-	var role models.Role
-	if err := h.db.Select("data_scope").Where("role_key = ?", claims.Role).First(&role).Error; err == nil {
-		if role.DataScope != "" {
-			dataScope = role.DataScope
+	roleKeys := utils.SplitRoleKeys(claims.Role)
+	if len(roleKeys) > 0 {
+		var roles []models.Role
+		if err := h.db.Select("data_scope", "status").Where("role_key IN ?", roleKeys).Find(&roles).Error; err == nil {
+			for _, role := range roles {
+				if role.Status != 1 {
+					continue
+				}
+				dataScope = utils.MergeDataScope(dataScope, role.DataScope)
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("role scope read failed")
 		}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("role scope read failed")
 	}
 
 	switch dataScope {
@@ -352,4 +360,9 @@ func (h *UserHandler) scopedUserQuery(c *gin.Context) (*gorm.DB, error) {
 		query = query.Where("id = ?", claims.UserID)
 	}
 	return query, nil
+}
+
+func normalizeUserRoles(raw string) string {
+	roleKeys := utils.SplitRoleKeys(raw)
+	return utils.JoinRoleKeys(roleKeys)
 }

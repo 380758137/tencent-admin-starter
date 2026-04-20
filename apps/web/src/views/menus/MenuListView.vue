@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { createMenu, deleteMenu, fetchMenus, updateMenu, type MenuPayload } from '../../api/menus'
+import { useCrudPerms } from '../../composables/use-perms'
 import type { Menu } from '../../types'
 import { menuTypeLabel } from '../../utils/display'
 
@@ -36,6 +37,7 @@ const columns = [
   { colKey: 'status', title: '状态', width: 90 },
   { colKey: 'actions', title: '操作', width: 160 }
 ]
+const { canCreate, canUpdate, canDelete } = useCrudPerms('menu')
 
 function resetForm() {
   form.parentId = 0
@@ -117,7 +119,7 @@ onMounted(loadMenus)
       <t-input v-model="keyword" placeholder="搜索菜单名称/路径/权限" style="width: 280px" />
       <t-button @click="loadMenus">查询</t-button>
       <div class="grow" />
-      <t-button theme="primary" @click="openCreate">新建菜单</t-button>
+      <t-button v-if="canCreate" theme="primary" @click="openCreate">新建菜单</t-button>
     </div>
 
     <div class="data-table-wrap">
@@ -131,10 +133,11 @@ onMounted(loadMenus)
           </t-tag>
         </template>
         <template #actions="{ row }">
-          <t-space>
-            <t-link theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
-            <t-link theme="danger" hover="color" @click="remove(row)">删除</t-link>
+          <t-space v-if="canUpdate || canDelete">
+            <t-link v-if="canUpdate" theme="primary" hover="color" @click="openEdit(row)">编辑</t-link>
+            <t-link v-if="canDelete" theme="danger" hover="color" @click="remove(row)">删除</t-link>
           </t-space>
+          <span v-else>-</span>
         </template>
       </t-table>
     </div>

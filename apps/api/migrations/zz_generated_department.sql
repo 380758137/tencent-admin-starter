@@ -8,3 +8,9 @@ CREATE TABLE IF NOT EXISTS `departments` (
   `created_at` DATETIME(3) NULL,
   `updated_at` DATETIME(3) NULL
 );
+
+INSERT INTO `menus` (`parent_id`, `name`, `menu_type`, `path`, `component`, `perms`, `sort`, `status`, `created_at`, `updated_at`)
+SELECT 0, '部门管理（生成）', 'menu', '/generated/department', '', 'department:list', 900, 1, NOW(3), NOW(3)
+WHERE NOT EXISTS (
+  SELECT 1 FROM `menus` WHERE `path` = '/generated/department'
+);

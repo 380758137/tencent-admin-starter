@@ -4,8 +4,8 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { createUser, deleteUser, exportUsers, fetchUsers, importUsers, updateUser, type UserPayload } from '../../api/users'
 import { fetchRoles } from '../../api/roles'
 import { useAuthStore } from '../../stores/auth'
-import type { User } from '../../types'
-import { roleLabel } from '../../utils/display'
+import type { Role, User } from '../../types'
+import { dataScopeLabel, roleLabel } from '../../utils/display'
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -25,10 +25,33 @@ const form = reactive<UserPayload>({
   deptId: 0,
   status: 1
 })
-const roleOptions = ref<Array<{ label: string; value: string }>>([
-  { label: '超级管理员（admin）', value: 'admin' },
-  { label: '操作员（operator）', value: 'operator' }
+const roleCatalog = ref<Role[]>([
+  {
+    id: 0,
+    name: '超级管理员',
+    roleKey: 'admin',
+    permissions: '*',
+    dataScope: 'all',
+    status: 1,
+    remark: '',
+    createdAt: '',
+    updatedAt: ''
+  },
+  {
+    id: 0,
+    name: '操作员',
+    roleKey: 'operator',
+    permissions: 'user:list,department:list,position:list,notice:list,online-user:list',
+    dataScope: 'dept',
+    status: 1,
+    remark: '',
+    createdAt: '',
+    updatedAt: ''
+  }
 ])
+const roleKeyword = ref('')
+const assignRoleVisible = ref(false)
+const draftRoles = ref<string[]>(['operator'])
 const fileInput = ref<HTMLInputElement | null>(null)
 const canCreate = computed(() => auth.hasPerm('user:create'))
 const canUpdate = computed(() => auth.hasPerm('user:update'))
@@ -40,6 +63,19 @@ const dataScopeText = computed(() => {
   if (auth.user?.dataScope === 'dept') return '本部门及子部门数据'
   return '仅本人数据'
 })
+const filteredRoles = computed(() => {
+  const kw = roleKeyword.value.trim().toLowerCase()
+  if (!kw) return roleCatalog.value
+  return roleCatalog.value.filter((item) => item.name.toLowerCase().includes(kw) || item.roleKey.toLowerCase().includes(kw))
+})
+const selectedRoles = computed(() => {
+  const selected = new Set(splitRoleKeys(form.role))
+  return roleCatalog.value.filter((item) => selected.has(item.roleKey))
+})
+const draftSelectedRoles = computed(() => {
+  const selected = new Set(draftRoles.value)
+  return roleCatalog.value.filter((item) => selected.has(item.roleKey))
+})
 
 const columns = [
   { colKey: 'id', title: 'ID', width: 70 },
@@ -50,6 +86,13 @@ const columns = [
   { colKey: 'status', title: '状态' },
   { colKey: 'actions', title: '操作', width: 180 }
 ]
+const roleAssignColumns = [
+  { colKey: 'name', title: '角色名称' },
+  { colKey: 'roleKey', title: '角色标识', width: 140 },
+  { colKey: 'dataScope', title: '数据范围', width: 140 },
+  { colKey: 'permissions', title: '权限数', width: 100 },
+  { colKey: 'actions', title: '分配', width: 120 }
+]
 
 function resetForm() {
   form.username = ''
@@ -58,6 +101,8 @@ function resetForm() {
   form.role = 'operator'
   form.deptId = 0
   form.status = 1
+  draftRoles.value = ['operator']
+  roleKeyword.value = ''
 }
 
 async function loadUsers() {
@@ -75,13 +120,17 @@ async function loadRoleOptions() {
   try {
     const res = await fetchRoles({ page: 1, size: 200 })
     if (res.list.length === 0) return
-    roleOptions.value = res.list.map((item) => ({
-      label: `${item.name}（${item.roleKey}）`,
-      value: item.roleKey
-    }))
+    roleCatalog.value = res.list
   } catch {
     // Keep built-in fallback options when role list loading fails.
   }
+}
+
+function rolePermissionCount(raw: string): number {
+  const value = raw.trim()
+  if (!value) return 0
+  if (value === '*') return 1
+  return value.split(',').map((item) => item.trim()).filter(Boolean).length
 }
 
 function openCreate() {
@@ -96,9 +145,53 @@ function openEdit(row: User) {
   form.password = ''
   form.displayName = row.displayName
   form.role = row.role
+  draftRoles.value = splitRoleKeys(row.role)
   form.deptId = row.deptId
   form.status = row.status
   visible.value = true
+}
+
+function openAssignRoleDialog() {
+  draftRoles.value = splitRoleKeys(form.role)
+  roleKeyword.value = ''
+  assignRoleVisible.value = true
+}
+
+function chooseDraftRole(roleKey: string) {
+  if (draftRoles.value.includes(roleKey)) {
+    draftRoles.value = draftRoles.value.filter((item) => item !== roleKey)
+    return
+  }
+  draftRoles.value = [...draftRoles.value, roleKey]
+}
+
+function confirmAssignRole() {
+  const normalized = joinRoleKeys(draftRoles.value)
+  if (!normalized) {
+    MessagePlugin.warning('至少选择一个角色')
+    return
+  }
+  form.role = normalized
+  assignRoleVisible.value = false
+}
+
+function splitRoleKeys(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function joinRoleKeys(keys: string[]): string {
+  return Array.from(new Set(keys.map((item) => item.trim()).filter(Boolean))).join(',')
+}
+
+function splitRoles(raw: string): string[] {
+  return raw.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+function hasDraftRole(roleKey: string): boolean {
+  return draftRoles.value.includes(roleKey)
 }
 
 async function submit() {
@@ -188,7 +281,16 @@ onMounted(async () => {
     <div class="data-table-wrap">
       <t-table row-key="id" :data="users" :columns="columns" :loading="loading" bordered>
       <template #role="{ row }">
-        <t-tag variant="outline" theme="primary">{{ roleLabel(row.role) }}</t-tag>
+        <t-space size="4px">
+          <t-tag
+            v-for="item in splitRoles(row.role)"
+            :key="`${row.id}-${item}`"
+            variant="outline"
+            theme="primary"
+          >
+            {{ roleLabel(item) }}
+          </t-tag>
+        </t-space>
       </template>
       <template #status="{ row }">
         <t-tag class="table-status" :theme="row.status === 1 ? 'success' : 'warning'">{{ row.status === 1 ? '启用' : '禁用' }}</t-tag>
@@ -223,9 +325,15 @@ onMounted(async () => {
           <t-input v-model="form.displayName" />
         </t-form-item>
         <t-form-item label="角色">
-          <t-select v-model="form.role">
-            <t-option v-for="item in roleOptions" :key="item.value" :value="item.value" :label="item.label" />
-          </t-select>
+          <t-space align="center">
+            <t-space size="6px">
+              <t-tag v-for="item in selectedRoles" :key="item.roleKey" theme="primary" variant="outline">
+                {{ item.name }}（{{ item.roleKey }}）
+              </t-tag>
+              <t-tag v-if="selectedRoles.length === 0" theme="warning" variant="outline">未分配角色</t-tag>
+            </t-space>
+            <t-button variant="outline" @click="openAssignRoleDialog">分配角色</t-button>
+          </t-space>
         </t-form-item>
         <t-form-item label="状态">
           <t-select v-model="form.status">
@@ -237,6 +345,37 @@ onMounted(async () => {
           <t-input-number v-model="form.deptId" />
         </t-form-item>
       </t-form>
+    </t-dialog>
+
+    <t-dialog v-model:visible="assignRoleVisible" header="分配角色" width="860px" @confirm="confirmAssignRole">
+      <div class="toolbar" style="margin-bottom: 12px">
+        <t-input v-model="roleKeyword" placeholder="搜索角色名称/标识" clearable style="width: 320px" />
+        <div class="grow" />
+        <t-tag theme="primary" variant="outline">
+          待分配角色数：{{ draftSelectedRoles.length }}
+        </t-tag>
+      </div>
+
+      <div class="data-table-wrap">
+        <t-table row-key="roleKey" :data="filteredRoles" :columns="roleAssignColumns" bordered>
+          <template #dataScope="{ row }">
+            {{ dataScopeLabel(row.dataScope) }}
+          </template>
+          <template #permissions="{ row }">
+            {{ rolePermissionCount(row.permissions) }}
+          </template>
+          <template #actions="{ row }">
+            <t-button
+              size="small"
+              :theme="hasDraftRole(row.roleKey) ? 'primary' : 'default'"
+              :variant="hasDraftRole(row.roleKey) ? 'base' : 'outline'"
+              @click="chooseDraftRole(row.roleKey)"
+            >
+              {{ hasDraftRole(row.roleKey) ? '已选择' : '选择' }}
+            </t-button>
+          </template>
+        </t-table>
+      </div>
     </t-dialog>
   </div>
 </template>
